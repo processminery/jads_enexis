@@ -4,6 +4,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plot
 from sklearn import linear_model
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from datetime import datetime
 
 # The MAPE (Mean Absolute Percent Error) measures the size of the error in percentage terms.
 def vp_mean_absolute_percentage_error(y_true, y_pred):
@@ -14,7 +15,7 @@ def vp_mean_absolute_percentage_error(y_true, y_pred):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
 
-def calc_accuracy_lr(df_input, split_date="2018-1-1"):
+def calc_accuracy_lr(df_input, split_date=2018):
     """ Bepaal de R2, RMSE, MSE, MAE en MAPE
 
     Bereken de verschillende nauwkeurigheidsmaten op basis van de input die wordt gesplitst in een train en test set
@@ -22,7 +23,7 @@ def calc_accuracy_lr(df_input, split_date="2018-1-1"):
 
     Args:
         df_input: dataframe met de kolommen SJV_TOTAAL, E1A_TOTAAL, E1B_TOTAAL, E1C_TOTAAL, LEVERINGSPERCENTAGE, PC4 en JAAR
-        split_date: de datum waarop gesplitst moet worden (op de JAAR kolom), bijvoorbeeld '2018-01-01'
+        split_date: het jaar waarop gesplitst moet worden (op de JAAR kolom), bijvoorbeeld '2018'
 
     Returns:
         Een dictionary met de nauwkeurigheidsmaten voor de train en test set
