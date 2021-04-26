@@ -3,6 +3,55 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plot
 from sklearn import linear_model
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
+# The MAPE (Mean Absolute Percent Error) measures the size of the error in percentage terms.
+def vp_mean_absolute_percentage_error(y_true, y_pred):
+    y_true, y_pred = np.array(y_true), np.array(y_pred)
+    y_true[
+        y_true == 0
+    ] = 1e-22  # vervang nul waardes door een heel klein getal om delen door 0 te voorkomen
+    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+
+def calc_accuracy_lr(df_input, split_date="2018-1-1"):
+    """ Bepaal de R2, RMSE, MSE, MAE en MAPE
+
+    Bereken de verschillende nauwkeurigheidsmaten op basis van de input die wordt gesplitst in een train en test set
+    gebaseerd op de split datum
+
+    Args:
+        df_input: dataframe met de kolommen SJV_TOTAAL, E1A_TOTAAL, E1B_TOTAAL, E1C_TOTAAL, LEVERINGSPERCENTAGE, PC4 en JAAR
+        split_date: de datum waarop gesplitst moet worden (op de JAAR kolom), bijvoorbeeld '2018-01-01'
+
+    Returns:
+        Een dictionary met de nauwkeurigheidsmaten voor de train en test set
+    """
+    df_train = df_input[df_input.JAAR < split_date]
+    X_train = df_train.JAAR.values
+    y_train = df_train.SJV_TOTAAL.values
+
+    df_test = df_input[df_input.JAAR >= split_date]
+    X_test = df_test.JAAR.values
+    y_test = df_test.SJV_TOTAAL.values
+
+    regressor = linear_model.Lasso()
+    regressor.fit(np.array(X_train.reshape(-1, 1)), np.array(y_train.reshape(-1, 1)))
+    y_train_pred = regressor.predict(np.array(X_train.reshape(-1, 1)))
+    y_test_pred = regressor.predict(np.array(X_test.reshape(-1, 1)))
+
+    return {
+        "r2_train": r2_score(y_train, y_train_pred),
+        "r2_test": r2_score(y_test, y_test_pred),
+        "MSE_train": mean_squared_error(y_train, y_train_pred),
+        "MSE test": mean_squared_error(y_test, y_test_pred),
+        "RMSE train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        "RMSE test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        "MAE train": mean_absolute_error(y_train, y_train_pred),
+        "MAE test": mean_absolute_error(y_test, y_test_pred),
+        "MAPE train": vp_mean_absolute_percentage_error(y_train, y_train_pred),
+        "MAPE test": vp_mean_absolute_percentage_error(y_test, y_test_pred),
+    }
 
 
 def predict_verbruik_lr(df_input, predict_type="mid"):
@@ -12,7 +61,7 @@ def predict_verbruik_lr(df_input, predict_type="mid"):
 
     Args:
         df_input: dataframe met de kolommen SJV_TOTAAL, E1A_TOTAAL, E1B_TOTAAL, E1C_TOTAAL, LEVERINGSPERCENTAGE, PC4 en JAAR
-        predict_type:
+        predict_type: Het predictie type dat wordt bepaald. Low markeert de onzekerheid aan de onderkant en high aan de bovenkant
 
     Returns:
         Een dataframe met de voorspelling voor 2021-2023
@@ -51,6 +100,13 @@ def predict_verbruik_lr(df_input, predict_type="mid"):
     # Bandbreedte voor de voorspellingen
     low_decr = 0.99
     high_incr = 1.01
+
+    # Bandbreedte bepaling
+    multiplier = 1
+    if predict_type == "low":
+        multiplier = low_decr
+    if predict_type == "high":
+        multiplier = high_incr
 
     # Loop door alle pc4's en voorspel 2021-2023
     for pc4 in tqdm(list_of_pc4):
@@ -93,20 +149,21 @@ def predict_verbruik_lr(df_input, predict_type="mid"):
 
         # Voeg de voorspellingen toe aan het output dataframe
         for index, jaar in enumerate(X_pred):
+            m = pow(multiplier, index + 1)
             df_output = df_output.append(
                 {
-                    "SJV_TOTAAL": forecast_totaal[index],
-                    "E1A_TOTAAL": forecast_e1a[index],
-                    "E1B_TOTAAL": forecast_e1b[index],
-                    "E1C_TOTAAL": forecast_e1c[index],
-                    "AANSLUITINGEN_AANTAL": forecast_aantal[index],
-                    "LEVERINGSRICHTING_PERC": forecast_perc[index],
+                    "SJV_TOTAAL": forecast_totaal[index] * m,
+                    "E1A_TOTAAL": forecast_e1a[index] * m,
+                    "E1B_TOTAAL": forecast_e1b[index] * m,
+                    "E1C_TOTAAL": forecast_e1c[index] * m,
+                    "AANSLUITINGEN_AANTAL": forecast_aantal[index] * m,
+                    "LEVERINGSRICHTING_PERC": forecast_perc[index] * m,
                     "PC4": pc4,
                     "JAAR": jaar[0],
                 },
                 ignore_index=True,
             )
-
     df_output.JAAR = df_output.JAAR.astype("int")
     df_output.PC4 = df_output.PC4.astype("int")
+
     return df_output
