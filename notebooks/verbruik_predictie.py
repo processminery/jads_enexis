@@ -286,8 +286,14 @@ def create_fb_prophet_obj():
 pool = None
 
 
-def fit_en_predict(ds, df_predict, *y):
-    """ Voer de fit en predict parallel uit voor alle y variabelen
+def fit_en_predict(ds, pred, *y):
+    """ Voer de fit en predict parallel uit voor de verschillende y variabelen
+
+    Args:
+        ds:     De datestamps voor het FB prophet model
+        pred:   Een dataframe met een ds kolom waarin de te voorspellen datestamps zitten
+        *y:     Een of meerder y-variabelen die gefit en voorspeld moeten worden
+
     """
     global pool
 
@@ -296,16 +302,22 @@ def fit_en_predict(ds, df_predict, *y):
     pool = Pool(len(y)) if pool is None else pool
 
     # Gebruik een generator om alle functie calls te genereren die parallel worden uitgevoerd
-    results = [
-        pool.apply(internal_fit_en_predict, args=(ds, yvar, df_predict)) for yvar in y
-    ]
+    results = [pool.apply(internal_fit_en_predict, args=(ds, yvar, pred)) for yvar in y]
 
     # Geef de resultaten terug als een tuple van dataframes
     return results
 
 
-def internal_fit_en_predict(ds, y, df_predict):
-    """ Doe 1 fit en predict met FB prophet
+def internal_fit_en_predict(ds, y, pred):
+    """ Doe een fit en predict met FB prophet
+
+    Args:
+        ds:     De datestamps voor het FB prophet model
+        y:      De y-variabelen om te fitten
+        pred:   Een dataframe met een ds kolom waarin de te voorspellen datestamps zitten
+
+    Returns:
+        Het gevulde predictie dataframe zoals dit door het FB prophet model wordt gemaakt
     """
     # Bouw het input frame voor deze y-variabele
     df_input = pd.DataFrame(columns=["ds", "y"])
@@ -315,10 +327,19 @@ def internal_fit_en_predict(ds, y, df_predict):
     # Doe de fit en maak de voorspelling
     model = create_fb_prophet_obj()
     model.fit(df_input)
-    return model.predict(df_predict)
+    return model.predict(pred)
 
 
 def predict_verbruik_fb_prophet(df_input):
+    """ Maak een fb prophet voorspelling voor 2021-2023
+
+    Args:
+        df_input:   Een kleinverbruik dataframe op PC4 niveau met de kolommen:  
+                    PC4, JAAR, SJV_TOTAAL, E1A_TOTAAL, E1B_TOTAAL, E1C_TOTAAL, AANSLUITINGEN_AANTAL, LEVERINGSRICHTING_PERC
+
+    Returns:
+        Een tuple van 3 dataframes (low, mid, high) met daarin de voorspelde waardes voor bovenstaande y-kolommen voor 2021-2023
+    """
     # Creëer een nieuw dataframe wat we zullen vullen met de voorspelling
     df_output_low = pd.DataFrame(
         columns=[
@@ -355,7 +376,8 @@ def predict_verbruik_fb_prophet(df_input):
         if len(df_pc4) < 9:
             continue
 
-        # Fit het model en maak een voorspelling de 6 kolommen
+        # Fit het model en maak een voorspelling voor de 6 kolommen
+        # De return values komen in een tuple van 6 dataframes terecht
         ds = pd.to_datetime(df_pc4.JAAR, format="%Y")
         (
             df_predict_totaal,
