@@ -8,6 +8,8 @@ from datetime import datetime
 import math
 from fbprophet import Prophet
 from fbprophet.plot import plot_plotly, plot_components_plotly
+from multiprocessing import Pool
+from tqdm import trange
 
 sum = 0
 
@@ -281,6 +283,41 @@ def create_fb_prophet_obj():
     )
 
 
+pool = None
+
+
+def fit_en_predict(ds, df_predict, *y):
+    """ Voer de fit en predict parallel uit voor alle y variabelen
+    """
+    global pool
+
+    # Gebruik meerdere threads om alle fits parallel uit te voeren
+    # Een pool is relatief kostbaar in tijd om op te zetten dus herbruik de pool wanneer mogelijk
+    pool = Pool(len(y)) if pool is None else pool
+
+    # Gebruik een generator om alle functie calls te genereren die parallel worden uitgevoerd
+    results = [
+        pool.apply(internal_fit_en_predict, args=(ds, yvar, df_predict)) for yvar in y
+    ]
+
+    # Geef de resultaten terug als een tuple van dataframes
+    return results
+
+
+def internal_fit_en_predict(ds, y, df_predict):
+    """ Doe 1 fit en predict met FB prophet
+    """
+    # Bouw het input frame voor deze y-variabele
+    df_input = pd.DataFrame(columns=["ds", "y"])
+    df_input.ds = ds
+    df_input.y = y
+
+    # Doe de fit en maak de voorspelling
+    model = create_fb_prophet_obj()
+    model.fit(df_input)
+    return model.predict(df_predict)
+
+
 def predict_verbruik_fb_prophet(df_input):
     # Creëer een nieuw dataframe wat we zullen vullen met de voorspelling
     df_output_low = pd.DataFrame(
@@ -303,56 +340,42 @@ def predict_verbruik_fb_prophet(df_input):
 
     # Voorspel voor de jaren 2021-2023
     X_pred = np.array([2021, 2022, 2023])
+    df_predict = pd.DataFrame(columns=["ds"])
+    df_predict.ds = pd.to_datetime(X_pred, format="%Y")
 
-    for pc4 in tqdm(list_of_pc4):
+    t_pc4 = tqdm(list_of_pc4)
+    for pc4 in t_pc4:
+        # Voeg pc4 aan output toe, zodat we kunnen zien voor welke pc4 er een voorspelling gemaakt wordt
+        t_pc4.set_description(f"PC4 = {pc4}")
+
+        # Selecteer alle rijen voor deze pc4
         df_pc4 = df_input[df_input.PC4 == pc4]
-        df_pc4["ds"] = pd.to_datetime(df_pc4.JAAR, format="%Y")
-        df_predict = pd.DataFrame(columns=["ds"])
 
         # Skip deze pc4 als er minder dan 9 jaren in zitten
         if len(df_pc4) < 9:
             continue
 
-        # Fit het model voor SJV_TOTAAL
-        df_pc4["ds"] = pd.to_datetime(df_pc4.JAAR, format="%Y")
-        df_pc4["y"] = df_pc4.SJV_TOTAAL
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
+        # Fit het model en maak een voorspelling de 6 kolommen
+        ds = pd.to_datetime(df_pc4.JAAR, format="%Y")
+        (
+            df_predict_totaal,
+            df_predict_e1a,
+            df_predict_e1b,
+            df_predict_e1c,
+            df_predict_aantal,
+            df_predict_perc,
+        ) = fit_en_predict(
+            ds,
+            df_predict,
+            df_pc4.SJV_TOTAAL,
+            df_pc4.E1A_TOTAAL,
+            df_pc4.E1B_TOTAAL,
+            df_pc4.E1C_TOTAAL,
+            df_pc4.AANSLUITINGEN_AANTAL,
+            df_pc4.LEVERINGSRICHTING_PERC,
+        )
 
-        # Maak een voorspelling voor SJV_TOTAAL
-        df_predict.ds = pd.to_datetime(X_pred, format="%Y")
-        df_predict_totaal = fb_prophet_model.predict(df_predict)
-
-        # Maak een voorspelling voor E1A_TOTAAL
-        df_pc4.y = df_pc4.E1A_TOTAAL
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
-        df_predict_e1a = fb_prophet_model.predict(df_predict)
-
-        # Maak een voorspelling voor E1B_TOTAAL
-        df_pc4.y = df_pc4.E1B_TOTAAL
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
-        df_predict_e1b = fb_prophet_model.predict(df_predict)
-
-        # Maak een voorspelling voor E1C_TOTAAL
-        df_pc4.y = df_pc4.E1C_TOTAAL
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
-        df_predict_e1c = fb_prophet_model.predict(df_predict)
-
-        # Maak een voorspelling voor AANSLUITINGEN_AANTAL
-        df_pc4.y = df_pc4.AANSLUITINGEN_AANTAL
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
-        df_predict_aantal = fb_prophet_model.predict(df_predict)
-
-        # Maak een voorspelling voor LEVERINGSRICHTING_PERC
-        df_pc4.y = df_pc4.LEVERINGSRICHTING_PERC
-        fb_prophet_model = create_fb_prophet_obj()
-        fb_prophet_model.fit(df_pc4)
-        df_predict_perc = fb_prophet_model.predict(df_predict)
-
+        # Bouw de output dataframes voor low, mid en high
         for index, jaar in enumerate(X_pred):
             df_output_low = df_output_low.append(
                 {
