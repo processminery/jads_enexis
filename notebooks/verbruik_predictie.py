@@ -9,6 +9,7 @@ import math
 from fbprophet import Prophet
 from fbprophet.plot import plot_plotly, plot_components_plotly
 from multiprocessing import Pool
+from multiprocessing import Process
 from tqdm import trange
 
 sum = 0
@@ -289,6 +290,8 @@ pool = None
 def fit_en_predict(ds, pred, *y):
     """ Voer de fit en predict parallel uit voor de verschillende y variabelen
 
+    Voor de paralle uitvoering wordt een Pool gebruikt uit de multiprocessing module
+
     Args:
         ds:     De datestamps voor het FB prophet model
         pred:   Een dataframe met een ds kolom waarin de te voorspellen datestamps zitten
@@ -332,6 +335,10 @@ def internal_fit_en_predict(ds, y, pred):
 
 def predict_verbruik_fb_prophet(df_input):
     """ Maak een fb prophet voorspelling voor 2021-2023
+
+    De functie maakt een voorspelling per PC4 en voegt deze samen in 1 dataframe. De voortgang wordt weergegeven mbv de tqdm module.
+    Bij elke voorspelling zit ook een onderkant en bovenkant van de voorspelde waarde (yhat_lower, yhat_upper). Deze worden in 
+    afzonderlijke dataframes teruggegeven
 
     Args:
         df_input:   Een kleinverbruik dataframe op PC4 niveau met de kolommen:  
